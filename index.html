@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>スライムクリッカー</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'M PLUS Rounded 1c', sans-serif;
+            touch-action: manipulation; /* ダブルタップズームを無効化 */
+        }
+        .rainbow-slime {
+            background: linear-gradient(124deg, #ff2400, #e81d1d, #e8b71d, #e3e81d, #1de840, #1ddde8, #2b1de8, #dd00f3, #dd00f3);
+            background-size: 1800% 1800%;
+            animation: rainbow-animation 18s ease infinite;
+        }
+        @keyframes rainbow-animation {
+            0%{background-position:0% 82%}
+            50%{background-position:100% 19%}
+            100%{background-position:0% 82%}
+        }
+        .floating-text {
+            position: absolute;
+            user-select: none;
+            pointer-events: none;
+            animation: float-up 1s ease-out forwards;
+            font-weight: 800;
+            text-shadow: 0px 0px 4px rgba(0,0,0,0.5);
+        }
+        @keyframes float-up {
+            from {
+                opacity: 1;
+                transform: translateY(0);
+            }
+            to {
+                opacity: 0;
+                transform: translateY(-50px);
+            }
+        }
+        .slime-bounce {
+            animation: bounce-animation 0.2s ease;
+        }
+        @keyframes bounce-animation {
+            0% { transform: scale(1); }
+            50% { transform: scale(0.9); }
+            100% { transform: scale(1); }
+        }
+        /* スクロールバーのスタイル */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        [v-cloak] {
+            display: none;
+        }
+    </style>
+</head>
+<body class="bg-green-100 text-gray-800 overflow-hidden">
+
+<div id="app" v-cloak class="flex flex-col md:flex-row h-screen w-screen p-2 md:p-4 gap-2 md:gap-4">
+
+    <!-- Left Panel: Slime -->
+    <div class="w-full md:w-1/2 h-2/3 md:h-full flex flex-col items-center justify-center bg-white/50 rounded-2xl shadow-lg p-4 relative overflow-hidden">
+        <!-- Status -->
+        <div class="w-full absolute top-0 p-4">
+            <div class="text-center">
+                <h2 class="text-2xl font-bold">レベル: {{ level }}</h2>
+            </div>
+            <!-- EXP Bar -->
+            <div class="w-full bg-gray-200 rounded-full h-6 mt-2 shadow-inner">
+                <div class="bg-blue-500 h-6 rounded-full text-white text-sm flex items-center justify-center transition-all duration-500" :style="{ width: expPercentage + '%' }">
+                    <span class="font-bold">{{ formatNumber(exp) }} / {{ formatNumber(requiredExp) }}</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Slime Area -->
+        <div id="slime-area" @click="slimeClick" @mousemove="handleMouseMove" @mouseleave="resetEyes" @touchstart.passive="handleMouseMove" @touchmove.passive="handleMouseMove" @touchend="resetEyes" class="relative cursor-pointer select-none w-64 h-64 md:w-80 md:h-80 flex items-center justify-center">
+             <!-- Slime SVG -->
+            <svg viewBox="0 0 100 100" class="w-full h-full drop-shadow-lg">
+                <!-- Body -->
+                <path d="M 50,15 C 20,15 10,40 10,65 C 10,90 30,100 50,100 C 70,100 90,90 90,65 C 90,40 80,15 50,15 Z" 
+                      :class="{'rainbow-slime': currentSkin.color === 'rainbow'}" 
+                      :style="{'fill': currentSkin.color !== 'rainbow' ? currentSkin.color : ''}"
+                      class="transition-colors duration-500"></path>
+                
+                <!-- Face -->
+                <g v-if="!isClicked">
+                    <!-- Eyes -->
+                    <circle cx="38" cy="55" r="6" fill="white"></circle>
+                    <circle cx="62" cy="55" r="6" fill="white"></circle>
+                    <circle :cx="pupilLeftPos.x" :cy="pupilLeftPos.y" r="2.5" fill="black"></circle>
+                    <circle :cx="pupilRightPos.x" :cy="pupilRightPos.y" r="2.5" fill="black"></circle>
+                    <!-- Mouth -->
+                    <path d="M 45 70 Q 50 80 55 70" stroke="white" stroke-width="2" fill="none" stroke-linecap="round"></path>
+                </g>
+                <!-- Clicked Face -->
+                <g v-else>
+                    <path d="M 32 52 C 35 48, 41 48, 44 52" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round"></path>
+                    <path d="M 56 52 C 59 48, 65 48, 68 52" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round"></path>
+                    <path d="M 42 70 Q 50 85 58 70" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round"></path>
+                </g>
+
+            </svg>
+            <!-- Accessories -->
+            <div v-if="currentSkin.hat !== 'none'" class="absolute -top-4 w-1/2">
+                <img :src="getAccessoryImage('hat', currentSkin.hat)" class="w-full">
+            </div>
+            <div v-if="currentSkin.glasses !== 'none'" class="absolute top-1/3 w-2/3">
+                 <img :src="getAccessoryImage('glasses', currentSkin.glasses)" class="w-full">
+            </div>
+             <div v-if="currentSkin.clothes !== 'none'" class="absolute top-1/2 w-full">
+                 <img :src="getAccessoryImage('clothes', currentSkin.clothes)" class="w-full">
+            </div>
+            <div v-if="currentSkin.shoes !== 'none'" class="absolute bottom-2 w-full flex justify-center gap-12">
+                 <img :src="getAccessoryImage('shoes', currentSkin.shoes)" class="w-1/4 transform -scale-x-100">
+                 <img :src="getAccessoryImage('shoes', currentSkin.shoes)" class="w-1/4">
+            </div>
+        </div>
+        
+        <div class="text-center absolute bottom-4">
+            <p class="text-3xl md:text-4xl font-extrabold text-yellow-500 drop-shadow-md">
+                <span class="text-gray-600">コイン:</span> {{ formatNumber(coins) }}
+            </p>
+            <p class="text-sm text-gray-500">自動クリック: {{ formatNumber(autoClickPower) }}/秒</p>
+        </div>
+    </div>
+
+    <!-- Right Panel: Controls -->
+    <div class="w-full md:w-1/2 h-1/3 md:h-full flex flex-col gap-2 md:gap-4">
+        <!-- Upgrades & Potions -->
+        <div class="h-1/2 flex gap-2 md:gap-4">
+            <!-- Upgrades -->
+            <div class="w-1/2 bg-white/50 rounded-2xl shadow-lg p-4 flex flex-col">
+                <h3 class="text-xl font-bold text-center mb-2">アップグレード</h3>
+                <div class="space-y-3 flex-grow">
+                    <button @click="buyUpgrade('click')" :disabled="coins < clickUpgradeCost" class="w-full p-3 rounded-lg text-white font-bold shadow-md transition-transform transform hover:scale-105 disabled:bg-gray-400 disabled:cursor-not-allowed bg-blue-500 hover:bg-blue-600">
+                        <p>クリック強化 (Lv.{{ clickUpgradeLevel }})</p>
+                        <p class="text-sm">コイン: {{ formatNumber(clickUpgradeCost) }}</p>
+                    </button>
+                    <button @click="buyUpgrade('autoClick')" :disabled="coins < autoClickUpgradeCost" class="w-full p-3 rounded-lg text-white font-bold shadow-md transition-transform transform hover:scale-105 disabled:bg-gray-400 disabled:cursor-not-allowed bg-green-500 hover:bg-green-600">
+                        <p>自動クリック (Lv.{{ autoClickUpgradeLevel }})</p>
+                        <p class="text-sm">コイン: {{ formatNumber(autoClickUpgradeCost) }}</p>
+                    </button>
+                </div>
+            </div>
+            <!-- Potions -->
+            <div class="w-1/2 bg-white/50 rounded-2xl shadow-lg p-4 flex flex-col">
+                <h3 class="text-xl font-bold text-center mb-2">ポーション</h3>
+                <div class="space-y-2 flex-grow overflow-y-auto custom-scrollbar pr-1">
+                    <button v-for="potion in potions" :key="potion.id" @click="buyPotion(potion)" :disabled="coins < potion.cost" class="w-full p-2 rounded-lg text-white font-bold shadow-md transition-transform transform hover:scale-105 disabled:bg-gray-400 disabled:cursor-not-allowed" :class="potion.color">
+                        <p class="text-sm">{{ potion.name }}</p>
+                         <p class="text-xs">{{ potion.description }}</p>
+                        <p class="text-xs">コイン: {{ formatNumber(potion.cost) }}</p>
+                    </button>
+                </div>
+            </div>
+        </div>
+        <!-- Customization & Settings -->
+        <div class="h-1/2 bg-white/50 rounded-2xl shadow-lg p-4 flex flex-col">
+            <div class="flex justify-between items-center border-b pb-2 mb-2">
+                 <h3 class="text-xl font-bold">カスタマイズ</h3>
+                 <button @click="showSettings = true" class="p-2 rounded-full hover:bg-gray-200 transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                 </button>
+            </div>
+            <div class="flex-grow overflow-y-auto custom-scrollbar pr-2 text-sm">
+                <!-- Colors -->
+                <div>
+                    <h4 class="font-bold mb-1">色</h4>
+                    <div class="flex flex-wrap gap-2">
+                        <div v-for="color in unlockedColors" :key="color.name" @click="changeColor(color.value)" class="w-8 h-8 rounded-full cursor-pointer border-2 transition" :class="currentSkin.color === color.value ? 'border-blue-500 scale-110' : 'border-transparent'" :title="color.name">
+                            <div class="w-full h-full rounded-full" :class="{'rainbow-slime': color.value === 'rainbow'}" :style="{'background-color': color.value !== 'rainbow' ? color.value : ''}"></div>
+                        </div>
+                    </div>
+                </div>
+                 <!-- Accessories -->
+                <div v-for="(category, key) in accessories" :key="key" class="mt-2">
+                     <h4 class="font-bold mb-1 capitalize">{{ category.name }}</h4>
+                     <div class="flex flex-wrap gap-2">
+                         <button @click="changeAccessory(key, 'none')" class="px-3 py-1 rounded-full border" :class="currentSkin[key] === 'none' ? 'bg-blue-500 text-white' : 'bg-gray-200'">なし</button>
+                         <button v-for="item in category.items" :key="item.id" @click="buyOrEquipAccessory(key, item)" :disabled="!unlockedAccessories[key].includes(item.id) && coins < item.cost" class="px-3 py-1 rounded-full border transition" :class="[ currentSkin[key] === item.id ? 'bg-blue-500 text-white' : 'bg-gray-200', unlockedAccessories[key].includes(item.id) ? 'border-green-500' : 'border-gray-400' ]">
+                             {{ item.name }} <span v-if="!unlockedAccessories[key].includes(item.id)">({{ formatNumber(item.cost) }})</span>
+                         </button>
+                     </div>
+                </div>
+            </div>
+            <div class="mt-auto pt-2 border-t border-gray-300">
+                <button @click="showSettings = true" class="w-full px-4 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 font-bold transition-colors">
+                    ゲームをリセット
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Settings Modal -->
+    <div v-if="showSettings" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-sm">
+            <h2 class="text-2xl font-bold mb-4">設定</h2>
+            <p class="mb-4">ゲームのデータをリセットしますか？この操作は取り消せません。</p>
+            <div class="flex justify-end gap-4">
+                <button @click="showSettings = false" class="px-4 py-2 rounded-lg bg-gray-200 hover:bg-gray-300">キャンセル</button>
+                <button @click="resetGame" class="px-4 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600">リセット</button>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+<script>
+const { createApp, ref, computed, onMounted } = Vue;
+
+createApp({
+    setup() {
+        // Game State
+        const coins = ref(0);
+        const exp = ref(0);
+        const level = ref(1);
+        const clickUpgradeLevel = ref(1);
+        const autoClickUpgradeLevel = ref(0);
+        const showSettings = ref(false);
+        const isClicked = ref(false);
+
+        // Slime Look
+        const pupilLeftPos = ref({ x: 38, y: 55 });
+        const pupilRightPos = ref({ x: 62, y: 55 });
+
+        const currentSkin = ref({
+            color: '#86efac',
+            hat: 'none',
+            glasses: 'none',
+            clothes: 'none',
+            shoes: 'none',
+        });
+        
+        const unlockedColors = ref([
+            { name: 'スライムグリーン', value: '#86efac', level: 1 },
+        ]);
+
+        const allColors = [
+            { name: 'スライムグリーン', value: '#86efac', level: 1 },
+            { name: 'ベビーブルー', value: '#bae6fd', level: 3 },
+            { name: 'イエロー', value: '#fde047', level: 5 },
+            { name: 'ピンク', value: '#f9a8d4', level: 10 },
+            { name: 'ミント', value: '#a7f3d0', level: 15 },
+            { name: 'オレンジ', value: '#fb923c', level: 30 },
+            { name: 'レッド', value: '#f87171', level: 40 },
+            { name: 'パープル', value: '#c084fc', level: 50 },
+            { name: 'メタル', value: '#a1a1aa', level: 75 },
+            { name: 'ダーク', value: '#52525b', level: 90 },
+            { name: 'レインボー', value: 'rainbow', level: 100 },
+        ];
+
+        const accessories = ref({
+            hat: {
+                name: '帽子/髪',
+                items: [
+                    { id: 'hat1', name: 'キャップ', cost: 1000 },
+                    { id: 'hat2', name: '王冠', cost: 100000 },
+                    { id: 'kinpatsu', name: '金髪', cost: 200000 },
+                    { id: 'kokuhair', name: '黒髪', cost: 200000 },
+                    { id: 'rainbowhair', name: '虹髪', cost: 1000000 },
+                ]
+            },
+            glasses: {
+                name: 'メガネ',
+                items: [
+                    { id: 'glasses1', name: 'サングラス', cost: 5000 },
+                    { id: 'glasses2', name: '丸メガネ', cost: 25000 },
+                    { id: 'starglasses', name: 'スター', cost: 75000 },
+                    { id: 'heartglasses', name: 'ハート', cost: 75000 },
+                ]
+            },
+            clothes: {
+                name: '服',
+                items: [
+                     { id: 'clothes1', name: 'Tシャツ', cost: 15000 },
+                     { id: 'creeperclothes', name: 'クリーパー', cost: 300000 },
+                     { id: 'sweater', name: 'セーター', cost: 80000 },
+                     { id: 'hoodie', name: 'パーカー', cost: 120000 },
+                ]
+            },
+            shoes: {
+                name: '靴',
+                items: [
+                     { id: 'shoes1', name: 'スニーカー', cost: 50000 },
+                     { id: 'platformboots', name: '厚底ブーツ', cost: 250000 },
+                     { id: 'rainbowsneakers', name: '虹スニーカー', cost: 1200000 },
+                ]
+            }
+        });
+
+        const unlockedAccessories = ref({
+            hat: ['none'],
+            glasses: ['none'],
+            clothes: ['none'],
+            shoes: ['none'],
+        });
+        
+        // Game Logic
+        const clickPower = computed(() => Math.ceil(Math.pow(1.2, clickUpgradeLevel.value - 1)));
+        const clickUpgradeCost = computed(() => Math.ceil(10 * Math.pow(1.2, clickUpgradeLevel.value)));
+        
+        const autoClickPower = computed(() => autoClickUpgradeLevel.value > 0 ? parseFloat((0.2 * autoClickUpgradeLevel.value * Math.pow(1.2, autoClickUpgradeLevel.value)).toFixed(1)) : 0);
+        const autoClickUpgradeCost = computed(() => Math.ceil(50 * Math.pow(1.3, autoClickUpgradeLevel.value)));
+        
+        const requiredExp = computed(() => Math.floor(100 * Math.pow(1.2, level.value - 1)));
+        const expPercentage = computed(() => (exp.value / requiredExp.value) * 100);
+        
+        const potions = computed(() => [
+            { id: 1, name: 'コインラッシュ', description: '30秒間クリック5倍', cost: Math.ceil(level.value * 500), duration: 30000, effect: 'clickBoost', multiplier: 5, color: 'bg-yellow-400' },
+            { id: 2, name: 'EXPブースト', description: '60秒間EXP2倍', cost: Math.ceil(level.value * 1000), duration: 60000, effect: 'expBoost', multiplier: 2, color: 'bg-blue-400' },
+            { id: 3, name: 'インスタントキャッシュ', description: '自動クリック1分分獲得', cost: Math.ceil(level.value * 200), duration: 0, effect: 'instantCoins', color: 'bg-green-400' },
+            { id: 4, name: 'クリティカルヒット', description: '60秒間10%でクリック10倍', cost: Math.ceil(level.value * 1500), duration: 60000, effect: 'critBoost', multiplier: 10, color: 'bg-red-400' },
+            { id: 5, name: 'レベルアップヘルパー', description: '必要EXPの10%獲得', cost: Math.ceil(level.value * 2000), duration: 0, effect: 'instantExp', color: 'bg-purple-400' },
+        ]);
+
+        const activeBoosts = ref({
+            clickBoost: 1,
+            expBoost: 1,
+            critBoost: false
+        });
+
+        // Methods
+        const formatNumber = (num) => {
+            if (num < 1000) return num.toLocaleString(undefined, { maximumFractionDigits: 1 });
+            const suffixes = ["", "K", "M", "B", "T"];
+            const i = Math.floor(Math.log10(num) / 3);
+            return (num / Math.pow(1000, i)).toFixed(1) + suffixes[i];
+        };
+        
+        const slimeClick = (event) => {
+            const slimeArea = document.getElementById('slime-area');
+            slimeArea.classList.remove('slime-bounce');
+            void slimeArea.offsetWidth; // Trigger reflow
+            slimeArea.classList.add('slime-bounce');
+            
+            isClicked.value = true;
+            setTimeout(() => isClicked.value = false, 200);
+
+            let currentClickPower = clickPower.value * activeBoosts.value.clickBoost;
+            if (activeBoosts.value.critBoost && Math.random() < 0.1) {
+                currentClickPower *= 10;
+            }
+            const currentExpGain = Math.ceil(currentClickPower / 4) * activeBoosts.value.expBoost;
+
+            coins.value += currentClickPower;
+            exp.value += currentExpGain;
+
+            createFloatingText(`+${formatNumber(currentClickPower)}`, event, '#fbbf24');
+            createFloatingText(`+${formatNumber(currentExpGain)} EXP`, event, '#3b82f6', true);
+            
+            checkLevelUp();
+        };
+
+        const createFloatingText = (text, event, color, isExp = false) => {
+            const slimeArea = document.getElementById('slime-area');
+            const rect = slimeArea.getBoundingClientRect();
+            
+            const clientX = event.touches ? event.touches[0].clientX : event.clientX;
+            const clientY = event.touches ? event.touches[0].clientY : event.clientY;
+
+            const x = clientX - rect.left;
+            const y = clientY - rect.top;
+
+            const el = document.createElement('div');
+            el.textContent = text;
+            el.className = 'floating-text';
+            el.style.left = `${x}px`;
+            el.style.top = `${y + (isExp ? 20 : 0)}px`;
+            el.style.color = color;
+            
+            slimeArea.appendChild(el);
+            setTimeout(() => el.remove(), 1000);
+        };
+        
+        const checkLevelUp = () => {
+            while (exp.value >= requiredExp.value) {
+                exp.value -= requiredExp.value;
+                level.value++;
+                const newlyUnlocked = allColors.filter(c => c.level <= level.value && !unlockedColors.value.some(uc => uc.value === c.value));
+                unlockedColors.value.push(...newlyUnlocked);
+            }
+        };
+        
+        const buyUpgrade = (type) => {
+            if (type === 'click' && coins.value >= clickUpgradeCost.value) {
+                coins.value -= clickUpgradeCost.value;
+                clickUpgradeLevel.value++;
+            }
+            if (type === 'autoClick' && coins.value >= autoClickUpgradeCost.value) {
+                coins.value -= autoClickUpgradeCost.value;
+                autoClickUpgradeLevel.value++;
+            }
+        };
+
+        const buyPotion = (potion) => {
+            if (coins.value < potion.cost) return;
+            coins.value -= potion.cost;
+            
+            switch(potion.effect) {
+                case 'clickBoost':
+                    activeBoosts.value.clickBoost = potion.multiplier;
+                    setTimeout(() => activeBoosts.value.clickBoost = 1, potion.duration);
+                    break;
+                case 'expBoost':
+                    activeBoosts.value.expBoost = potion.multiplier;
+                    setTimeout(() => activeBoosts.value.expBoost = 1, potion.duration);
+                    break;
+                case 'instantCoins':
+                    coins.value += autoClickPower.value * 60;
+                    break;
+                case 'critBoost':
+                    activeBoosts.value.critBoost = true;
+                    setTimeout(() => activeBoosts.value.critBoost = false, potion.duration);
+                    break;
+                case 'instantExp':
+                    exp.value += requiredExp.value * 0.1;
+                    checkLevelUp();
+                    break;
+            }
+        };
+
+        const changeColor = (color) => {
+            currentSkin.value.color = color;
+        };
+
+        const changeAccessory = (category, itemId) => {
+            currentSkin.value[category] = itemId;
+        };
+
+        const buyOrEquipAccessory = (category, item) => {
+             if (unlockedAccessories.value[category].includes(item.id)) {
+                changeAccessory(category, item.id);
+             } else {
+                if (coins.value >= item.cost) {
+                    coins.value -= item.cost;
+                    unlockedAccessories.value[category].push(item.id);
+                    changeAccessory(category, item.id);
+                }
+             }
+        };
+        
+        const getAccessoryImage = (category, id) => {
+            const svgData = {
+                'hat1': `<svg viewBox="0 0 100 50"><path d="M 20 50 C 20 30, 30 30, 50 30 C 70 30, 80 30, 80 50 Z" fill="#3b82f6" stroke="black" stroke-width="2"/><rect x="10" y="48" width="80" height="5" fill="#3b82f6" stroke="black" stroke-width="2"/></svg>`,
+                'hat2': `<svg viewBox="0 0 100 50"><path d="M 10 50 L 20 20 L 35 35 L 50 10 L 65 35 L 80 20 L 90 50 Z" fill="gold" stroke="black" stroke-width="2"/></svg>`,
+                'kinpatsu': `<svg viewBox="0 0 100 50"><path d="M 20 50 Q 50 0, 80 50 Q 50 40, 20 50 Z" fill="#fef08a" stroke="#ca8a04" stroke-width="2"/></svg>`,
+                'kokuhair': `<svg viewBox="0 0 100 50"><path d="M 20 50 Q 50 0, 80 50 Q 50 40, 20 50 Z" fill="#1c1917" stroke="black" stroke-width="2"/></svg>`,
+                'rainbowhair': `<svg viewBox="0 0 100 50"><defs><linearGradient id="rainbowhairgrad" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" style="stop-color:red;" /><stop offset="20%" style="stop-color:yellow;" /><stop offset="40%" style="stop-color:lime;" /><stop offset="60%" style="stop-color:cyan;" /><stop offset="80%" style="stop-color:blue;" /><stop offset="100%" style="stop-color:magenta;" /></linearGradient></defs><path d="M 20 50 Q 50 0, 80 50 Q 50 40, 20 50 Z" fill="url(#rainbowhairgrad)" stroke="black" stroke-width="2"/></svg>`,
+                'glasses1': `<svg viewBox="0 0 100 30"><rect x="10" y="5" width="30" height="20" fill="black" rx="5"/><rect x="60" y="5" width="30" height="20" fill="black" rx="5"/><line x1="40" y1="15" x2="60" y2="15" stroke="black" stroke-width="3"/></svg>`,
+                'glasses2': `<svg viewBox="0 0 100 30"><circle cx="25" cy="15" r="15" fill="none" stroke="black" stroke-width="3"/><circle cx="75" cy="15" r="15" fill="none" stroke="black" stroke-width="3"/><line x1="40" y1="15" x2="60" y2="15" stroke="black" stroke-width="3"/></svg>`,
+                'starglasses': `<svg viewBox="0 0 100 35"><path d="M25 2 L30 15 L45 15 L32 25 L38 38 L25 28 L12 38 L18 25 L5 15 L20 15 Z" fill="yellow" stroke="black" stroke-width="2"/><path d="M75 2 L80 15 L95 15 L82 25 L88 38 L75 28 L62 38 L68 25 L55 15 L70 15 Z" fill="yellow" stroke="black" stroke-width="2"/><line x1="45" y1="15" x2="55" y2="15" stroke="black" stroke-width="3"/></svg>`,
+                'heartglasses': `<svg viewBox="0 0 100 35"><path d="M25 15 C 10 0, 40 0, 25 15 C 10 30, 25 30, 25 15" fill="pink" stroke="red" stroke-width="2" transform="rotate(45 25 15)"/><path d="M75 15 C 60 0, 90 0, 75 15 C 60 30, 75 30, 75 15" fill="pink" stroke="red" stroke-width="2" transform="rotate(45 75 15)"/><line x1="45" y1="15" x2="55" y2="15" stroke="red" stroke-width="3"/></svg>`,
+                'clothes1': `<svg viewBox="0 0 100 30"><path d="M 20 0 L 80 0 L 90 20 L 70 30 L 30 30 L 10 20 Z" fill="#ef4444" stroke="black" stroke-width="2"/></svg>`,
+                'creeperclothes': `<svg viewBox="0 0 100 40"><path d="M 20 5 L 80 5 L 90 25 L 70 35 L 30 35 L 10 25 Z" fill="#22c55e" stroke="black" stroke-width="2"/><rect x="35" y="10" width="10" height="10" fill="black"/><rect x="55" y="10" width="10" height="10" fill="black"/><rect x="45" y="20" width="10" height="10" fill="black"/><rect x="40" y="15" width="20" height="5" fill="black"/></svg>`,
+                'sweater': `<svg viewBox="0 0 100 40"><path d="M 20 5 L 80 5 L 90 25 L 70 35 L 30 35 L 10 25 Z" fill="#facc15" stroke="black" stroke-width="2"/><rect y="15" x="0" width="100" height="5" fill="#eab308"/><rect y="25" x="0" width="100" height="5" fill="#eab308"/></svg>`,
+                'hoodie': `<svg viewBox="0 0 100 40"><path d="M 20 5 L 80 5 L 90 25 L 70 35 L 30 35 L 10 25 Z" fill="#a8a29e" stroke="black" stroke-width="2"/><path d="M 35 5 C 25 -10, 75 -10, 65 5 Z" fill="#a8a29e" stroke="black" stroke-width="2" /></svg>`,
+                'shoes1': `<svg viewBox="0 0 50 30"><path d="M 5 25 C 10 10, 30 10, 45 20 L 40 28 L 10 28 Z" fill="white" stroke="black" stroke-width="2"/><path d="M 10 18 L 25 18" stroke="#3b82f6" stroke-width="2"/></svg>`,
+                'platformboots': `<svg viewBox="0 0 50 40"><path d="M 5 25 C 10 10, 30 10, 45 20 V 35 H 5 Z" fill="black" stroke="white" stroke-width="1.5"/></svg>`,
+                'rainbowsneakers': `<svg viewBox="0 0 50 30"><defs><linearGradient id="rainbowsgrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:red;" /><stop offset="20%" style="stop-color:yellow;" /><stop offset="40%" style="stop-color:lime;" /><stop offset="60%" style="stop-color:cyan;" /><stop offset="80%" style="stop-color:blue;" /><stop offset="100%" style="stop-color:magenta;" /></linearGradient></defs><path d="M 5 25 C 10 10, 30 10, 45 20 L 40 28 L 10 28 Z" fill="url(#rainbowsgrad)" stroke="black" stroke-width="2"/></svg>`,
+            };
+            return `data:image/svg+xml;base64,${btoa(svgData[id] || '')}`;
+        };
+        
+        const handleMouseMove = (e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            
+            const svgX = ((clientX - rect.left) / rect.width) * 100;
+            const svgY = ((clientY - rect.top) / rect.height) * 100;
+
+            const eyeLeftCenter = { x: 38, y: 55 };
+            const eyeRightCenter = { x: 62, y: 55 };
+            const maxMove = 2; // Pupil movement radius
+
+            // Left Eye
+            let dx = svgX - eyeLeftCenter.x;
+            let dy = svgY - eyeLeftCenter.y;
+            let angle = Math.atan2(dy, dx);
+            let distance = Math.min(maxMove, Math.sqrt(dx*dx + dy*dy) * 0.1);
+            pupilLeftPos.value.x = eyeLeftCenter.x + distance * Math.cos(angle);
+            pupilLeftPos.value.y = eyeLeftCenter.y + distance * Math.sin(angle);
+
+            // Right Eye
+            dx = svgX - eyeRightCenter.x;
+            dy = svgY - eyeRightCenter.y;
+            angle = Math.atan2(dy, dx);
+            distance = Math.min(maxMove, Math.sqrt(dx*dx + dy*dy) * 0.1);
+            pupilRightPos.value.x = eyeRightCenter.x + distance * Math.cos(angle);
+            pupilRightPos.value.y = eyeRightCenter.y + distance * Math.sin(angle);
+        };
+
+        const resetEyes = () => {
+            pupilLeftPos.value = { x: 38, y: 55 };
+            pupilRightPos.value = { x: 62, y: 55 };
+        };
+
+
+        // Save & Load
+        const saveGame = () => {
+            const gameState = {
+                coins: coins.value,
+                exp: exp.value,
+                level: level.value,
+                clickUpgradeLevel: clickUpgradeLevel.value,
+                autoClickUpgradeLevel: autoClickUpgradeLevel.value,
+                currentSkin: currentSkin.value,
+                unlockedAccessories: unlockedAccessories.value,
+                unlockedColors: unlockedColors.value,
+            };
+            localStorage.setItem('slimeClickerSave', JSON.stringify(gameState));
+        };
+
+        const loadGame = () => {
+            const savedGame = localStorage.getItem('slimeClickerSave');
+            if (savedGame) {
+                const gameState = JSON.parse(savedGame);
+                coins.value = gameState.coins || 0;
+                exp.value = gameState.exp || 0;
+                level.value = gameState.level || 1;
+                clickUpgradeLevel.value = gameState.clickUpgradeLevel || 1;
+                autoClickUpgradeLevel.value = gameState.autoClickUpgradeLevel || 0;
+                currentSkin.value = gameState.currentSkin || currentSkin.value;
+                unlockedAccessories.value = gameState.unlockedAccessories || unlockedAccessories.value;
+                unlockedColors.value = gameState.unlockedColors || unlockedColors.value;
+            }
+        };
+
+        const resetGame = () => {
+            localStorage.removeItem('slimeClickerSave');
+            window.location.reload();
+        };
+
+        // Game Loop
+        onMounted(() => {
+            loadGame();
+            window.addEventListener('beforeunload', saveGame); // サイトを閉じる時に保存
+            setInterval(() => {
+                if(autoClickPower.value > 0){
+                    coins.value += autoClickPower.value;
+                    exp.value += Math.ceil(autoClickPower.value / 10);
+                    checkLevelUp();
+                }
+            }, 1000);
+            
+            setInterval(saveGame, 5000);
+        });
+
+        return {
+            coins, exp, level, clickUpgradeLevel, autoClickUpgradeLevel, requiredExp, expPercentage,
+            clickPower, autoClickPower, clickUpgradeCost, autoClickUpgradeCost,
+            slimeClick, buyUpgrade, buyPotion, formatNumber, showSettings, resetGame,
+            potions, currentSkin, unlockedColors, accessories, unlockedAccessories,
+            changeColor, changeAccessory, buyOrEquipAccessory, getAccessoryImage,
+            isClicked, pupilLeftPos, pupilRightPos, handleMouseMove, resetEyes
+        };
+    }
+}).mount('#app');
+</script>
+
+</body>
+</html>
+
+
+
