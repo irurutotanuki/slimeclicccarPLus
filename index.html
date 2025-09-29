@@ -73,6 +73,14 @@
 
     <!-- Left Panel: Slime -->
     <div class="w-full md:w-1/2 h-2/3 md:h-full flex flex-col items-center justify-center bg-white/50 rounded-2xl shadow-lg p-4 relative overflow-hidden">
+        <!-- Active Potions Display -->
+        <div class="absolute top-2 left-2 flex flex-col gap-2 z-10">
+            <div v-for="potion in activePotionTimers" :key="potion.name" class="bg-black/50 text-white rounded-lg px-3 py-1 text-sm font-bold flex items-center gap-2">
+                <span>{{ potion.name }}</span>
+                <span class="font-mono">{{ potion.remaining }}s</span>
+            </div>
+        </div>
+
         <!-- Status -->
         <div class="w-full absolute top-0 p-4">
             <div class="text-center">
@@ -118,10 +126,10 @@
             <div v-if="currentSkin.hat !== 'none'" class="absolute -top-4 w-1/2">
                 <img :src="getAccessoryImage('hat', currentSkin.hat)" class="w-full">
             </div>
-            <div v-if="currentSkin.glasses !== 'none'" class="absolute top-1/3 w-2/3">
+            <div v-if="currentSkin.glasses !== 'none'" class="absolute top-[38%] w-2/3">
                  <img :src="getAccessoryImage('glasses', currentSkin.glasses)" class="w-full">
             </div>
-             <div v-if="currentSkin.clothes !== 'none'" class="absolute top-1/2 w-full">
+             <div v-if="currentSkin.clothes !== 'none'" class="absolute top-[55%] w-full">
                  <img :src="getAccessoryImage('clothes', currentSkin.clothes)" class="w-full">
             </div>
             <div v-if="currentSkin.shoes !== 'none'" class="absolute bottom-2 w-full flex justify-center gap-12">
@@ -329,10 +337,12 @@ createApp({
         ]);
 
         const activeBoosts = ref({
-            clickBoost: 1,
-            expBoost: 1,
-            critBoost: false
+            clickBoost: { active: false, multiplier: 1, endTime: 0, timerId: null },
+            expBoost: { active: false, multiplier: 1, endTime: 0, timerId: null },
+            critBoost: { active: false, endTime: 0, timerId: null }
         });
+        
+        const activePotionTimers = ref([]);
 
         // Methods
         const formatNumber = (num) => {
@@ -351,11 +361,11 @@ createApp({
             isClicked.value = true;
             setTimeout(() => isClicked.value = false, 200);
 
-            let currentClickPower = clickPower.value * activeBoosts.value.clickBoost;
-            if (activeBoosts.value.critBoost && Math.random() < 0.1) {
+            let currentClickPower = clickPower.value * activeBoosts.value.clickBoost.multiplier;
+            if (activeBoosts.value.critBoost.active && Math.random() < 0.1) {
                 currentClickPower *= 10;
             }
-            const currentExpGain = Math.ceil(currentClickPower / 4) * activeBoosts.value.expBoost;
+            const currentExpGain = Math.ceil(currentClickPower / 4) * activeBoosts.value.expBoost.multiplier;
 
             coins.value += currentClickPower;
             exp.value += currentExpGain;
@@ -411,21 +421,35 @@ createApp({
             if (coins.value < potion.cost) return;
             coins.value -= potion.cost;
             
+            const now = Date.now();
+
+            const activateBoost = (boostType, multiplier, duration) => {
+                const boost = activeBoosts.value[boostType];
+                if (boost.timerId) clearTimeout(boost.timerId);
+                
+                boost.active = true;
+                if(multiplier) boost.multiplier = multiplier;
+                boost.endTime = now + duration;
+                
+                boost.timerId = setTimeout(() => {
+                    boost.active = false;
+                    if(multiplier) boost.multiplier = 1;
+                    boost.timerId = null;
+                }, duration);
+            };
+
             switch(potion.effect) {
                 case 'clickBoost':
-                    activeBoosts.value.clickBoost = potion.multiplier;
-                    setTimeout(() => activeBoosts.value.clickBoost = 1, potion.duration);
+                    activateBoost('clickBoost', potion.multiplier, potion.duration);
                     break;
                 case 'expBoost':
-                    activeBoosts.value.expBoost = potion.multiplier;
-                    setTimeout(() => activeBoosts.value.expBoost = 1, potion.duration);
+                    activateBoost('expBoost', potion.multiplier, potion.duration);
                     break;
                 case 'instantCoins':
                     coins.value += autoClickPower.value * 60;
                     break;
                 case 'critBoost':
-                    activeBoosts.value.critBoost = true;
-                    setTimeout(() => activeBoosts.value.critBoost = false, potion.duration);
+                    activateBoost('critBoost', null, potion.duration);
                     break;
                 case 'instantExp':
                     exp.value += requiredExp.value * 0.1;
@@ -456,24 +480,25 @@ createApp({
         
         const getAccessoryImage = (category, id) => {
             const svgData = {
-                'hat1': `<svg viewBox="0 0 100 50"><path d="M 20 50 C 20 30, 30 30, 50 30 C 70 30, 80 30, 80 50 Z" fill="#3b82f6" stroke="black" stroke-width="2"/><rect x="10" y="48" width="80" height="5" fill="#3b82f6" stroke="black" stroke-width="2"/></svg>`,
-                'hat2': `<svg viewBox="0 0 100 50"><path d="M 10 50 L 20 20 L 35 35 L 50 10 L 65 35 L 80 20 L 90 50 Z" fill="gold" stroke="black" stroke-width="2"/></svg>`,
-                'kinpatsu': `<svg viewBox="0 0 100 50"><path d="M 20 50 Q 50 0, 80 50 Q 50 40, 20 50 Z" fill="#fef08a" stroke="#ca8a04" stroke-width="2"/></svg>`,
-                'kokuhair': `<svg viewBox="0 0 100 50"><path d="M 20 50 Q 50 0, 80 50 Q 50 40, 20 50 Z" fill="#1c1917" stroke="black" stroke-width="2"/></svg>`,
-                'rainbowhair': `<svg viewBox="0 0 100 50"><defs><linearGradient id="rainbowhairgrad" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" style="stop-color:red;" /><stop offset="20%" style="stop-color:yellow;" /><stop offset="40%" style="stop-color:lime;" /><stop offset="60%" style="stop-color:cyan;" /><stop offset="80%" style="stop-color:blue;" /><stop offset="100%" style="stop-color:magenta;" /></linearGradient></defs><path d="M 20 50 Q 50 0, 80 50 Q 50 40, 20 50 Z" fill="url(#rainbowhairgrad)" stroke="black" stroke-width="2"/></svg>`,
-                'glasses1': `<svg viewBox="0 0 100 30"><rect x="10" y="5" width="30" height="20" fill="black" rx="5"/><rect x="60" y="5" width="30" height="20" fill="black" rx="5"/><line x1="40" y1="15" x2="60" y2="15" stroke="black" stroke-width="3"/></svg>`,
-                'glasses2': `<svg viewBox="0 0 100 30"><circle cx="25" cy="15" r="15" fill="none" stroke="black" stroke-width="3"/><circle cx="75" cy="15" r="15" fill="none" stroke="black" stroke-width="3"/><line x1="40" y1="15" x2="60" y2="15" stroke="black" stroke-width="3"/></svg>`,
-                'starglasses': `<svg viewBox="0 0 100 35"><path d="M25 2 L30 15 L45 15 L32 25 L38 38 L25 28 L12 38 L18 25 L5 15 L20 15 Z" fill="yellow" stroke="black" stroke-width="2"/><path d="M75 2 L80 15 L95 15 L82 25 L88 38 L75 28 L62 38 L68 25 L55 15 L70 15 Z" fill="yellow" stroke="black" stroke-width="2"/><line x1="45" y1="15" x2="55" y2="15" stroke="black" stroke-width="3"/></svg>`,
-                'heartglasses': `<svg viewBox="0 0 100 35"><path d="M25 15 C 10 0, 40 0, 25 15 C 10 30, 25 30, 25 15" fill="pink" stroke="red" stroke-width="2" transform="rotate(45 25 15)"/><path d="M75 15 C 60 0, 90 0, 75 15 C 60 30, 75 30, 75 15" fill="pink" stroke="red" stroke-width="2" transform="rotate(45 75 15)"/><line x1="45" y1="15" x2="55" y2="15" stroke="red" stroke-width="3"/></svg>`,
-                'clothes1': `<svg viewBox="0 0 100 30"><path d="M 20 0 L 80 0 L 90 20 L 70 30 L 30 30 L 10 20 Z" fill="#ef4444" stroke="black" stroke-width="2"/></svg>`,
-                'creeperclothes': `<svg viewBox="0 0 100 40"><path d="M 20 5 L 80 5 L 90 25 L 70 35 L 30 35 L 10 25 Z" fill="#22c55e" stroke="black" stroke-width="2"/><rect x="35" y="10" width="10" height="10" fill="black"/><rect x="55" y="10" width="10" height="10" fill="black"/><rect x="45" y="20" width="10" height="10" fill="black"/><rect x="40" y="15" width="20" height="5" fill="black"/></svg>`,
-                'sweater': `<svg viewBox="0 0 100 40"><path d="M 20 5 L 80 5 L 90 25 L 70 35 L 30 35 L 10 25 Z" fill="#facc15" stroke="black" stroke-width="2"/><rect y="15" x="0" width="100" height="5" fill="#eab308"/><rect y="25" x="0" width="100" height="5" fill="#eab308"/></svg>`,
-                'hoodie': `<svg viewBox="0 0 100 40"><path d="M 20 5 L 80 5 L 90 25 L 70 35 L 30 35 L 10 25 Z" fill="#a8a29e" stroke="black" stroke-width="2"/><path d="M 35 5 C 25 -10, 75 -10, 65 5 Z" fill="#a8a29e" stroke="black" stroke-width="2" /></svg>`,
-                'shoes1': `<svg viewBox="0 0 50 30"><path d="M 5 25 C 10 10, 30 10, 45 20 L 40 28 L 10 28 Z" fill="white" stroke="black" stroke-width="2"/><path d="M 10 18 L 25 18" stroke="#3b82f6" stroke-width="2"/></svg>`,
-                'platformboots': `<svg viewBox="0 0 50 40"><path d="M 5 25 C 10 10, 30 10, 45 20 V 35 H 5 Z" fill="black" stroke="white" stroke-width="1.5"/></svg>`,
-                'rainbowsneakers': `<svg viewBox="0 0 50 30"><defs><linearGradient id="rainbowsgrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:red;" /><stop offset="20%" style="stop-color:yellow;" /><stop offset="40%" style="stop-color:lime;" /><stop offset="60%" style="stop-color:cyan;" /><stop offset="80%" style="stop-color:blue;" /><stop offset="100%" style="stop-color:magenta;" /></linearGradient></defs><path d="M 5 25 C 10 10, 30 10, 45 20 L 40 28 L 10 28 Z" fill="url(#rainbowsgrad)" stroke="black" stroke-width="2"/></svg>`,
+                'hat1': `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50"><path d="M 20 50 C 20 30, 30 30, 50 30 C 70 30, 80 30, 80 50 Z" fill="#3b82f6" stroke="black" stroke-width="2"/><rect x="10" y="48" width="80" height="5" fill="#3b82f6" stroke="black" stroke-width="2"/></svg>`,
+                'hat2': `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60"><path d="M 10 55 Q 50 30 90 55 L 85 25 L 65 50 L 50 20 L 35 50 L 15 25 Z" fill="#c70000"/><path d="M 10 55 Q 50 30 90 55 L 85 25 L 65 50 L 50 20 L 35 50 L 15 25 Z" fill="none" stroke="#ffd700" stroke-width="5" stroke-linejoin="round"/><path d="M 5 55 H 95" stroke="#ffd700" stroke-width="8" stroke-linecap="round"/><circle cx="15" cy="55" r="4" fill="#ff4136" stroke="#c70000" stroke-width="1.5"/><circle cx="35" cy="55" r="4" fill="#ff4136" stroke="#c70000" stroke-width="1.5"/><circle cx="50" cy="55" r="5" fill="#ff4136" stroke="#c70000" stroke-width="1.5"/><circle cx="65" cy="55" r="4" fill="#ff4136" stroke="#c70000" stroke-width="1.5"/><circle cx="85" cy="55" r="4" fill="#ff4136" stroke="#c70000" stroke-width="1.5"/><path d="M 50 20 L 50 5 M 45 10 L 55 10 M 50 5 L 47 10 Q 50 12 53 10 Z" stroke="#ffd700" stroke-width="3" stroke-linecap="round"/></svg>`,
+                'kinpatsu': `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60"><defs><linearGradient id="blond-grad" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" style="stop-color:#fff7b3;"/><stop offset="100%" style="stop-color:#fde047;"/></linearGradient></defs><g stroke="#eab308" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="url(#blond-grad)"><path d="M15.2,52.8 C24.4,38,26.8,17.1,43.2,11.3 C35.4,22.1,34.8,37,39.3,49.2 C45.5,35.3,55,27.1,66.8,24.4 C60.2,34.3,58.8,46.7,64.2,56.1 C75.5,43.4,85.2,26.1,84.4,10.6 C80.6,26.5,71.1,39.8,59.3,47.8 C58.1,32.3,49.9,18.4,36.5,10 C38.3,25,33,40.1,23,50.7 L15.2,52.8z"/></g></svg>`,
+                'kokuhair': `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50"><defs><linearGradient id="black-grad" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" style="stop-color:#4b5563;"/><stop offset="100%" style="stop-color:#111827;"/></linearGradient></defs><path d="M15,50 C 10,30 25,10 50,10 C 75,10 90,30 85,50 L 80,48 C 70,30 60,20 50,20 C 40,20 30,30 20,48 Z" fill="url(#black-grad)" stroke="black" stroke-width="1.5"/><path d="M 50,10 C 40,25 35,40 30,50" fill="none" stroke="#6b7280" stroke-width="2" stroke-opacity="0.5"/><path d="M 50,10 C 60,25 65,40 70,50" fill="none" stroke="#6b7280" stroke-width="2" stroke-opacity="0.5"/></svg>`,
+                'rainbowhair': `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50"><defs><linearGradient id="rainbowhairgrad" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" style="stop-color:red;"/><stop offset="20%" style="stop-color:yellow;"/><stop offset="40%" style="stop-color:lime;"/><stop offset="60%" style="stop-color:cyan;"/><stop offset="80%" style="stop-color:blue;"/><stop offset="100%" style="stop-color:magenta;"/></linearGradient></defs><path d="M15,50 C 10,30 25,10 50,10 C 75,10 90,30 85,50 L 80,48 C 70,30 60,20 50,20 C 40,20 30,30 20,48 Z" fill="url(#rainbowhairgrad)" stroke="black" stroke-width="1.5"/></svg>`,
+                'glasses1': `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 30"><rect x="10" y="5" width="30" height="20" fill="black" rx="5"/><rect x="60" y="5" width="30" height="20" fill="black" rx="5"/><line x1="40" y1="15" x2="60" y2="15" stroke="black" stroke-width="3"/></svg>`,
+                'glasses2': `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 30"><circle cx="25" cy="15" r="15" fill="none" stroke="black" stroke-width="3"/><circle cx="75" cy="15" r="15" fill="none" stroke="black" stroke-width="3"/><line x1="40" y1="15" x2="60" y2="15" stroke="black" stroke-width="3"/></svg>`,
+                'starglasses': `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 35"><path d="M25 2 L30 15 L45 15 L32 25 L38 38 L25 28 L12 38 L18 25 L5 15 L20 15 Z" fill="yellow" stroke="black" stroke-width="2"/><path d="M75 2 L80 15 L95 15 L82 25 L88 38 L75 28 L62 38 L68 25 L55 15 L70 15 Z" fill="yellow" stroke="black" stroke-width="2"/><line x1="45" y1="15" x2="55" y2="15" stroke="black" stroke-width="3"/></svg>`,
+                'heartglasses': `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 35"><path d="M25 15 C 10 0, 40 0, 25 15 C 10 30, 25 30, 25 15" fill="pink" stroke="red" stroke-width="2" transform="rotate(45 25 15)"/><path d="M75 15 C 60 0, 90 0, 75 15 C 60 30, 75 30, 75 15" fill="pink" stroke="red" stroke-width="2" transform="rotate(45 75 15)"/><line x1="45" y1="15" x2="55" y2="15" stroke="red" stroke-width="3"/></svg>`,
+                'clothes1': `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 30"><path d="M 20 0 L 80 0 L 90 20 L 70 30 L 30 30 L 10 20 Z" fill="#ef4444" stroke="black" stroke-width="2"/></svg>`,
+                'creeperclothes': `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 40"><path d="M 20 5 L 80 5 L 90 25 L 70 35 L 30 35 L 10 25 Z" fill="#22c55e" stroke="black" stroke-width="2"/><rect x="35" y="10" width="10" height="10" fill="black"/><rect x="55" y="10" width="10" height="10" fill="black"/><rect x="45" y="20" width="10" height="10" fill="black"/><rect x="40" y="15" width="20" height="5" fill="black"/></svg>`,
+                'sweater': `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 40"><path d="M 20 5 L 80 5 L 90 25 L 70 35 L 30 35 L 10 25 Z" fill="#facc15" stroke="black" stroke-width="2"/><rect y="15" x="0" width="100" height="5" fill="#eab308"/><rect y="25" x="0" width="100" height="5" fill="#eab308"/></svg>`,
+                'hoodie': `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 40"><path d="M 20 5 L 80 5 L 90 25 L 70 35 L 30 35 L 10 25 Z" fill="#a8a29e" stroke="black" stroke-width="2"/><path d="M 35 5 C 25 -10, 75 -10, 65 5 Z" fill="#a8a29e" stroke="black" stroke-width="2" /></svg>`,
+                'shoes1': `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 50 30"><path d="M 5 25 C 10 10, 30 10, 45 20 L 40 28 L 10 28 Z" fill="white" stroke="black" stroke-width="2"/><path d="M 10 18 L 25 18" stroke="#3b82f6" stroke-width="2"/></svg>`,
+                'platformboots': `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 50 40"><path d="M 5 25 C 10 10, 30 10, 45 20 V 35 H 5 Z" fill="black" stroke="white" stroke-width="1.5"/></svg>`,
+                'rainbowsneakers': `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 50 30"><defs><linearGradient id="rainbowsgrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:red;" /><stop offset="20%" style="stop-color:yellow;" /><stop offset="40%" style="stop-color:lime;" /><stop offset="60%" style="stop-color:cyan;" /><stop offset="80%" style="stop-color:blue;" /><stop offset="100%" style="stop-color:magenta;" /></linearGradient></defs><path d="M 5 25 C 10 10, 30 10, 45 20 L 40 28 L 10 28 Z" fill="url(#rainbowsgrad)" stroke="black" stroke-width="2"/></svg>`,
             };
-            return `data:image/svg+xml;base64,${btoa(svgData[id] || '')}`;
+            const svgString = svgData[id] || '';
+            return `data:image/svg+xml;base64,${btoa(svgString)}`;
         };
         
         const handleMouseMove = (e) => {
@@ -522,6 +547,7 @@ createApp({
                 currentSkin: currentSkin.value,
                 unlockedAccessories: unlockedAccessories.value,
                 unlockedColors: unlockedColors.value,
+                activeBoosts: JSON.parse(JSON.stringify(activeBoosts.value)) // deep copy
             };
             localStorage.setItem('slimeClickerSave', JSON.stringify(gameState));
         };
@@ -538,6 +564,22 @@ createApp({
                 currentSkin.value = gameState.currentSkin || currentSkin.value;
                 unlockedAccessories.value = gameState.unlockedAccessories || unlockedAccessories.value;
                 unlockedColors.value = gameState.unlockedColors || unlockedColors.value;
+                
+                if (gameState.activeBoosts) {
+                    const now = Date.now();
+                    for(const key in gameState.activeBoosts) {
+                        const boost = gameState.activeBoosts[key];
+                        if (boost.active && boost.endTime > now) {
+                            const remaining = boost.endTime - now;
+                            activeBoosts.value[key] = { ...boost };
+                            activeBoosts.value[key].timerId = setTimeout(() => {
+                                activeBoosts.value[key].active = false;
+                                if (activeBoosts.value[key].multiplier) activeBoosts.value[key].multiplier = 1;
+                                activeBoosts.value[key].timerId = null;
+                            }, remaining);
+                        }
+                    }
+                }
             }
         };
 
@@ -558,6 +600,22 @@ createApp({
                 }
             }, 1000);
             
+            setInterval(() => {
+                const now = Date.now();
+                const timers = [];
+                const potionNames = { clickBoost: 'コインラッシュ', expBoost: 'EXPブースト', critBoost: 'クリティカル' };
+                for (const key in activeBoosts.value) {
+                    const boost = activeBoosts.value[key];
+                    if (boost.active && boost.endTime > now) {
+                        timers.push({
+                            name: potionNames[key],
+                            remaining: Math.ceil((boost.endTime - now) / 1000)
+                        });
+                    }
+                }
+                activePotionTimers.value = timers;
+            }, 500);
+
             setInterval(saveGame, 5000);
         });
 
@@ -567,7 +625,8 @@ createApp({
             slimeClick, buyUpgrade, buyPotion, formatNumber, showSettings, resetGame,
             potions, currentSkin, unlockedColors, accessories, unlockedAccessories,
             changeColor, changeAccessory, buyOrEquipAccessory, getAccessoryImage,
-            isClicked, pupilLeftPos, pupilRightPos, handleMouseMove, resetEyes
+            isClicked, pupilLeftPos, pupilRightPos, handleMouseMove, resetEyes,
+            activePotionTimers
         };
     }
 }).mount('#app');
@@ -575,6 +634,11 @@ createApp({
 
 </body>
 </html>
+
+
+
+
+
 
 
 
