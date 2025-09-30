@@ -398,11 +398,32 @@ createApp({
         const formatNumber = (num) => {
             if (!isFinite(num)) return "無限大"; // Infinityを処理
             if (num < 1000) return num.toLocaleString(undefined, { maximumFractionDigits: 1 });
-            // K(千), M(百万), B(十億), T(兆), q(千兆), Q(百京), s(十垓), S(秭), o(穣)...
-            const suffixes = ["", "K", "M", "B", "T", "q", "Q", "s", "S", "o", "n", "d", "U", "D", "Td", "qd", "Qd", "sd", "Sd", "Od", "Nd", "V", "Uv", "Dv"];
+
+            const baseSuffixes = ["", "K", "M", "B", "T"];
+            
             const i = Math.floor(Math.log10(num) / 3);
-            const suffix = suffixes[i] || 'e' + (i * 3); // サフィックスがない場合は科学的記数法で表示
-            return (num / Math.pow(1000, i)).toFixed(1) + suffix;
+
+            let suffix;
+            let power;
+
+            if (i < baseSuffixes.length) {
+                // K, M, B, T の範囲
+                suffix = baseSuffixes[i];
+                power = i;
+            } else {
+                // digit の範囲
+                let digitIndex = i - (baseSuffixes.length - 1);
+                if (digitIndex <= 300) {
+                    suffix = 'digit' + digitIndex;
+                    power = i;
+                } else {
+                    // digit300 を超えた場合
+                    suffix = 'digit300';
+                    power = 300 + (baseSuffixes.length - 1);
+                }
+            }
+            
+            return (num / Math.pow(1000, power)).toFixed(1) + suffix;
         };
         
         const slimeClick = (event) => {
@@ -713,6 +734,7 @@ createApp({
 
 </body>
 </html>
+
 
 
 
