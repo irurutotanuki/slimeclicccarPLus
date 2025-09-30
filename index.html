@@ -97,12 +97,12 @@
         <!-- Status -->
         <div class="w-full absolute top-0 p-4">
             <div class="text-center">
-                <h2 class="text-2xl font-bold">レベル: {{ level }}</h2>
+                <h2 class="text-2xl font-bold">レベル: {{ level < MAX_LEVEL ? level : 'MAX' }}</h2>
             </div>
             <!-- EXP Bar -->
             <div class="w-full bg-gray-200 rounded-full h-6 mt-2 shadow-inner">
                 <div class="bg-blue-500 h-6 rounded-full text-white text-sm flex items-center justify-center transition-all duration-500" :style="{ width: expPercentage + '%' }">
-                    <span class="font-bold">{{ formatNumber(exp) }} / {{ formatNumber(requiredExp) }}</span>
+                    <span class="font-bold">{{ level < MAX_LEVEL ? formatNumber(exp) : 'MAX' }} / {{ formatNumber(requiredExp) }}</span>
                 </div>
             </div>
         </div>
@@ -273,6 +273,7 @@ createApp({
         const autoClickUpgradeLevel = ref(0);
         const showSettings = ref(false);
         const isClicked = ref(false);
+        const MAX_LEVEL = 35000;
 
         // Slime Look
         const pupilLeftPos = ref({ x: 38, y: 55 });
@@ -367,11 +368,15 @@ createApp({
         const clickPower = computed(() => Math.ceil(Math.pow(1.2, clickUpgradeLevel.value - 1)));
         const clickUpgradeCost = computed(() => Math.ceil(10 * Math.pow(1.2, clickUpgradeLevel.value)));
         
-        const autoClickPower = computed(() => autoClickUpgradeLevel.value > 0 ? parseFloat((0.2 * autoClickUpgradeLevel.value * Math.pow(1.22, autoClickUpgradeLevel.value)).toFixed(1)) : 0);
+        const autoClickPower = computed(() => autoClickUpgradeLevel.value > 0 ? parseFloat((10 * Math.pow(1.22, autoClickUpgradeLevel.value)).toFixed(1)) : 0);
         const autoClickUpgradeCost = computed(() => Math.ceil(50 * Math.pow(1.3, autoClickUpgradeLevel.value)));
         
-        const requiredExp = computed(() => Math.floor(100 * Math.pow(1.25, level.value - 1)));
-        const expPercentage = computed(() => (exp.value / requiredExp.value) * 100);
+        // レベルアップに必要な経験値の計算式を調整
+        const requiredExp = computed(() => Math.floor(300 * Math.pow(1.27, level.value - 1)));
+        const expPercentage = computed(() => {
+            if (level.value >= MAX_LEVEL) return 100;
+            return (exp.value / requiredExp.value) * 100;
+        });
         
         const potions = computed(() => [
             { id: 1, name: 'コインラッシュ', description: '30秒間クリック5倍', cost: Math.ceil(level.value * 500), duration: 30000, effect: 'clickBoost', multiplier: 5, color: 'bg-yellow-400' },
@@ -391,10 +396,13 @@ createApp({
 
         // Methods
         const formatNumber = (num) => {
+            if (!isFinite(num)) return "無限大"; // Infinityを処理
             if (num < 1000) return num.toLocaleString(undefined, { maximumFractionDigits: 1 });
-            const suffixes = ["", "K", "M", "B", "T"];
+            // K(千), M(百万), B(十億), T(兆), q(千兆), Q(百京), s(十垓), S(秭), o(穣)...
+            const suffixes = ["", "K", "M", "B", "T", "q", "Q", "s", "S", "o", "n", "d", "U", "D", "Td", "qd", "Qd", "sd", "Sd", "Od", "Nd", "V", "Uv", "Dv"];
             const i = Math.floor(Math.log10(num) / 3);
-            return (num / Math.pow(1000, i)).toFixed(1) + suffixes[i];
+            const suffix = suffixes[i] || 'e' + (i * 3); // サフィックスがない場合は科学的記数法で表示
+            return (num / Math.pow(1000, i)).toFixed(1) + suffix;
         };
         
         const slimeClick = (event) => {
@@ -452,11 +460,24 @@ createApp({
         };
         
         const checkLevelUp = () => {
-            while (exp.value >= requiredExp.value) {
+            while (level.value < MAX_LEVEL && exp.value >= requiredExp.value) {
+                // Javascriptの数値の限界を超えた場合（Infinity）、
+                // 無限ループやNaN（非数）になるのを防ぐための処理
+                if (!isFinite(exp.value) || !isFinite(requiredExp.value)) {
+                    level.value++;
+                    exp.value = 0; // 正確な計算ができないためEXPをリセット
+                    
+                    // 無限にレベルアップするのを防ぐためにループを抜ける
+                    break; 
+                }
+
                 exp.value -= requiredExp.value;
                 level.value++;
                 const newlyUnlocked = allColors.filter(c => c.level <= level.value && !unlockedColors.value.some(uc => uc.value === c.value));
                 unlockedColors.value.push(...newlyUnlocked);
+            }
+            if (level.value >= MAX_LEVEL) {
+                exp.value = requiredExp.value;
             }
         };
         
@@ -506,8 +527,10 @@ createApp({
                     activateBoost('critBoost', null, potion.duration);
                     break;
                 case 'instantExp':
-                    exp.value += requiredExp.value * 0.1;
-                    checkLevelUp();
+                    if (level.value < MAX_LEVEL) {
+                        exp.value += requiredExp.value * 0.1;
+                        checkLevelUp();
+                    }
                     break;
             }
         };
@@ -649,8 +672,10 @@ createApp({
             setInterval(() => {
                 if(autoClickPower.value > 0){
                     coins.value += autoClickPower.value;
-                    exp.value += Math.ceil(autoClickPower.value / 10);
-                    checkLevelUp();
+                    if (level.value < MAX_LEVEL) {
+                        exp.value += Math.ceil(autoClickPower.value / 10);
+                        checkLevelUp();
+                    }
                 }
             }, 1000);
             
@@ -680,7 +705,7 @@ createApp({
             potions, currentSkin, unlockedColors, accessories, unlockedAccessories,
             changeColor, changeAccessory, buyOrEquipAccessory, getAccessoryImage,
             isClicked, pupilLeftPos, pupilRightPos, handleMouseMove, resetEyes,
-            activePotionTimers, isAuraActive, auraColor
+            activePotionTimers, isAuraActive, auraColor, MAX_LEVEL
         };
     }
 }).mount('#app');
@@ -688,5 +713,10 @@ createApp({
 
 </body>
 </html>
+
+
+
+
+
 
 
