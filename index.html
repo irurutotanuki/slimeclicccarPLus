@@ -659,8 +659,19 @@ createApp({
                 level.value = gameState.level || 1;
                 clickUpgradeLevel.value = gameState.clickUpgradeLevel || 1;
                 autoClickUpgradeLevel.value = gameState.autoClickUpgradeLevel || 0;
-                currentSkin.value = gameState.currentSkin || currentSkin.value;
-                unlockedAccessories.value = gameState.unlockedAccessories || unlockedAccessories.value;
+                
+                // 古いセーブデータとの互換性を保つための修正
+                if (gameState.currentSkin) {
+                    currentSkin.value = Object.assign({}, currentSkin.value, gameState.currentSkin);
+                }
+                if (gameState.unlockedAccessories) {
+                    for (const category in accessories.value) {
+                        if (gameState.unlockedAccessories[category]) {
+                            unlockedAccessories.value[category] = gameState.unlockedAccessories[category];
+                        }
+                    }
+                }
+
                 unlockedColors.value = gameState.unlockedColors || unlockedColors.value;
                 
                 if (gameState.activeBoosts) {
@@ -734,6 +745,7 @@ createApp({
 
 </body>
 </html>
+
 
 
 
