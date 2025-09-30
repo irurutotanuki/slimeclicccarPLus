@@ -266,6 +266,7 @@ const { createApp, ref, computed, onMounted } = Vue;
 createApp({
     setup() {
         // Game State
+        const SAVE_VERSION = '1.2'; // セーブデータのバージョン
         const coins = ref(0);
         const exp = ref(0);
         const level = ref(1);
@@ -637,6 +638,7 @@ createApp({
         // Save & Load
         const saveGame = () => {
             const gameState = {
+                version: SAVE_VERSION,
                 coins: coins.value,
                 exp: exp.value,
                 level: level.value,
@@ -654,6 +656,14 @@ createApp({
             const savedGame = localStorage.getItem('slimeClickerSave');
             if (savedGame) {
                 const gameState = JSON.parse(savedGame);
+                
+                // バージョンが違う、または存在しない場合はデータをリセットして再読み込み
+                if (!gameState.version || gameState.version !== SAVE_VERSION) {
+                    localStorage.removeItem('slimeClickerSave');
+                    window.location.reload();
+                    return;
+                }
+
                 coins.value = gameState.coins || 0;
                 exp.value = gameState.exp || 0;
                 level.value = gameState.level || 1;
@@ -745,6 +755,7 @@ createApp({
 
 </body>
 </html>
+
 
 
 
